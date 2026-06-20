@@ -26,13 +26,14 @@ impl Default for HybridConfig {
 
 pub fn hybrid_search(
     conn: &Connection,
+    tenant_id: &str,
     embedder: &dyn Embedder,
     query: &str,
     limit: usize,
     graph_anchor: Option<&str>,
     cfg: &HybridConfig,
 ) -> Result<Vec<SearchHit>> {
-    let fts_hits = search_fts(conn, query, limit.saturating_mul(3))?;
+    let fts_hits = search_fts(conn, tenant_id, query, limit.saturating_mul(3))?;
     let mut scores: HashMap<String, (f32, SearchHit)> = HashMap::new();
 
     let max_fts = fts_hits.iter().map(|h| h.score).fold(0.01f32, f32::max);
@@ -48,10 +49,11 @@ pub fn hybrid_search(
         .next()
         .unwrap_or_default();
     if !q_vec.is_empty() {
-        let mut stmt =
-            conn.prepare("SELECT slug, chunk_index, vector FROM chunk_vectors WHERE dim = ?1")?;
+        let mut stmt = conn.prepare(
+            "SELECT slug, chunk_index, vector FROM chunk_vectors WHERE tenant_id = ?1 AND dim = ?2",
+        )?;
         let dim = q_vec.len() as i64;
-        let rows = stmt.query_map([dim], |row| {
+        let rows = stmt.query_map(rusqlite::params![tenant_id, dim], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?,
@@ -85,7 +87,7 @@ pub fn hybrid_search(
     }
 
     if let Some(anchor) = graph_anchor {
-        let neighbors = graph_slugs(conn, anchor, 2)?;
+        let neighbors = graph_slugs(conn, tenant_id, anchor, 2)?;
         for slug in neighbors {
             if slug == anchor {
                 continue;
@@ -110,12 +112,12 @@ pub fn hybrid_search(
         .map(|(slug, (s, mut h))| {
             h.score = s;
             if h.snippet.is_empty() {
-                if let Ok(sn) = snippet_for_slug(conn, &slug) {
+                if let Ok(sn) = snippet_for_slug(conn, tenant_id, &slug) {
                     h.snippet = sn;
                 }
             }
             if h.title == slug {
-                if let Ok(t) = title_for_slug(conn, &slug) {
+                if let Ok(t) = title_for_slug(conn, tenant_id, &slug) {
                     h.title = t;
                 }
             }
@@ -126,16 +128,18 @@ pub fn hybrid_search(
     Ok(ranked.into_iter().take(limit).map(|(_, _, h)| h).collect())
 }
 
-fn graph_slugs(conn: &Connection, anchor: &str, depth: usize) -> Result<Vec<String>> {
+fn graph_slugs(conn: &Connection, tenant_id: &str, anchor: &str, depth: usize) -> Result<Vec<String>> {
     let mut out = vec![anchor.to_string()];
     let mut frontier = vec![anchor.to_string()];
     for _ in 0..depth {
         let mut next = Vec::new();
         for slug in &frontier {
             let mut stmt = conn.prepare(
-                "SELECT to_slug FROM links WHERE from_slug = ?1 UNION SELECT from_slug FROM links WHERE to_slug = ?1",
+                "SELECT to_slug FROM links WHERE tenant_id = ?1 AND from_slug = ?2 UNION SELECT from_slug FROM links WHERE tenant_id = ?1 AND to_slug = ?2",
             )?;
-            let rows = stmt.query_map([slug], |r| r.get::<_, String>(0))?;
+            let rows = stmt.query_map(rusqlite::params![tenant_id, slug], |r| {
+                r.get::<_, String>(0)
+            })?;
             for s in rows.flatten() {
                 if !out.contains(&s) {
                     out.push(s.clone());
@@ -148,19 +152,22 @@ fn graph_slugs(conn: &Connection, anchor: &str, depth: usize) -> Result<Vec<Stri
     Ok(out)
 }
 
-fn snippet_for_slug(conn: &Connection, slug: &str) -> Result<String> {
-    let mut stmt =
-        conn.prepare("SELECT substr(body, 1, 120) FROM pages WHERE slug = ?1 AND deleted = 0")?;
-    let mut rows = stmt.query([slug])?;
+fn snippet_for_slug(conn: &Connection, tenant_id: &str, slug: &str) -> Result<String> {
+    let mut stmt = conn.prepare(
+        "SELECT substr(body, 1, 120) FROM pages WHERE tenant_id = ?1 AND slug = ?2 AND deleted = 0",
+    )?;
+    let mut rows = stmt.query(rusqlite::params![tenant_id, slug])?;
     if let Some(row) = rows.next()? {
         return Ok(row.get(0)?);
     }
     Ok(String::new())
 }
 
-fn title_for_slug(conn: &Connection, slug: &str) -> Result<String> {
-    let mut stmt = conn.prepare("SELECT title FROM pages WHERE slug = ?1 AND deleted = 0")?;
-    let mut rows = stmt.query([slug])?;
+fn title_for_slug(conn: &Connection, tenant_id: &str, slug: &str) -> Result<String> {
+    let mut stmt = conn.prepare(
+        "SELECT title FROM pages WHERE tenant_id = ?1 AND slug = ?2 AND deleted = 0",
+    )?;
+    let mut rows = stmt.query(rusqlite::params![tenant_id, slug])?;
     if let Some(row) = rows.next()? {
         return Ok(row.get(0)?);
     }
@@ -181,11 +188,13 @@ mod tests {
         let conn = db::open(&path).unwrap();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
-            "INSERT INTO pages (slug, title, page_type, body, source, deleted, updated_at) VALUES (?1,?2,?3,?4,?5,0,?6)",
+            "INSERT INTO pages (tenant_id, slug, title, page_type, body, source, deleted, updated_at) VALUES ('default',?1,?2,?3,?4,?5,0,?6)",
             rusqlite::params!["people/alice", "Alice", "person", "graph retrieval expert", "t", now],
-        ).unwrap();
+        )
+        .unwrap();
         let hits = hybrid_search(
             &conn,
+            "default",
             &HashEmbedder,
             "graph retrieval",
             5,

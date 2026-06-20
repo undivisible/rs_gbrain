@@ -3,7 +3,12 @@ use rusqlite::Connection;
 
 use crate::types::SearchHit;
 
-pub fn search_fts(conn: &Connection, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
+pub fn search_fts(
+    conn: &Connection,
+    tenant_id: &str,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SearchHit>> {
     let q = query.trim();
     if q.is_empty() {
         return Ok(Vec::new());
@@ -15,12 +20,12 @@ pub fn search_fts(conn: &Connection, query: &str, limit: usize) -> Result<Vec<Se
                bm25(pages_fts) AS rank
         FROM pages_fts
         JOIN pages p ON p.rowid = pages_fts.rowid
-        WHERE pages_fts MATCH ?
+        WHERE pages_fts MATCH ? AND p.tenant_id = ? AND p.deleted = 0
         ORDER BY rank
         LIMIT ?
         "#,
     )?;
-    let rows = stmt.query_map(rusqlite::params![fts_q, limit as i64], |row| {
+    let rows = stmt.query_map(rusqlite::params![fts_q, tenant_id, limit as i64], |row| {
         let slug: String = row.get(0)?;
         let title: String = row.get(1)?;
         let snippet: String = row.get(2)?;

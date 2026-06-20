@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::db;
 use crate::embed::{f32_to_bytes, Embedder, HashEmbedder};
+use crate::tenant::{tenant_from_env, TenantScope};
 use crate::extract::extract_wiki_slugs;
 use crate::hybrid::{hybrid_search, HybridConfig};
 use crate::search::search_fts;
@@ -16,13 +17,36 @@ use crate::types::{
 
 pub struct BrainEngine {
     db_path: PathBuf,
+    tenant: TenantScope,
 }
 
 impl BrainEngine {
     pub fn open(db_path: impl AsRef<Path>) -> Result<Self> {
+        Self::open_scoped(db_path, tenant_from_env())
+    }
+
+    pub fn open_scoped(db_path: impl AsRef<Path>, tenant_id: impl Into<String>) -> Result<Self> {
         let db_path = db_path.as_ref().to_path_buf();
         db::open(&db_path)?;
-        Ok(Self { db_path })
+        Ok(Self {
+            db_path,
+            tenant: TenantScope::new(tenant_id),
+        })
+    }
+
+    pub fn tenant_id(&self) -> &str {
+        &self.tenant.tenant_id
+    }
+
+    pub fn with_tenant(&self, tenant_id: &str) -> Self {
+        Self {
+            db_path: self.db_path.clone(),
+            tenant: TenantScope::new(tenant_id),
+        }
+    }
+
+    pub(crate) fn conn_for_jobs(&self) -> Result<Connection> {
+        self.conn()
     }
 
     pub fn default_home() -> Result<PathBuf> {
@@ -54,9 +78,9 @@ impl BrainEngine {
         let conn = self.conn()?;
         conn.execute(
             r#"
-            INSERT INTO pages (slug, title, page_type, body, source, deleted, updated_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6)
-            ON CONFLICT(slug) DO UPDATE SET
+            INSERT INTO pages (tenant_id, slug, title, page_type, body, source, deleted, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7)
+            ON CONFLICT(tenant_id, slug) DO UPDATE SET
                 title = excluded.title,
                 page_type = excluded.page_type,
                 body = excluded.body,
@@ -64,7 +88,15 @@ impl BrainEngine {
                 deleted = 0,
                 updated_at = excluded.updated_at
             "#,
-            rusqlite::params![slug, title, page_type, body, source, now],
+            rusqlite::params![
+                self.tenant_id(),
+                slug,
+                title,
+                page_type,
+                body,
+                source,
+                now
+            ],
         )?;
         self.reindex_links(&conn, slug, page_type, body)?;
         let embedder = HashEmbedder;
@@ -92,8 +124,8 @@ impl BrainEngine {
     pub fn delete_page(&self, slug: &str) -> Result<bool> {
         let conn = self.conn()?;
         let n = conn.execute(
-            "UPDATE pages SET deleted = 1, updated_at = ?2 WHERE slug = ?1 AND deleted = 0",
-            rusqlite::params![slug, Utc::now().to_rfc3339()],
+            "UPDATE pages SET deleted = 1, updated_at = ?3 WHERE tenant_id = ?1 AND slug = ?2 AND deleted = 0",
+            rusqlite::params![self.tenant_id(), slug, Utc::now().to_rfc3339()],
         )?;
         Ok(n > 0)
     }
@@ -101,8 +133,14 @@ impl BrainEngine {
     pub fn add_link(&self, from: &str, to: &str, rel: &str) -> Result<()> {
         let conn = self.conn()?;
         conn.execute(
-            "INSERT OR IGNORE INTO links (from_slug, to_slug, rel, created_at) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![from, to, rel, Utc::now().to_rfc3339()],
+            "INSERT OR IGNORE INTO links (tenant_id, from_slug, to_slug, rel, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                self.tenant_id(),
+                from,
+                to,
+                rel,
+                Utc::now().to_rfc3339()
+            ],
         )?;
         Ok(())
     }
@@ -115,16 +153,16 @@ impl BrainEngine {
         body: &str,
     ) -> Result<()> {
         conn.execute(
-            "DELETE FROM links WHERE from_slug = ?1",
-            rusqlite::params![from_slug],
+            "DELETE FROM links WHERE tenant_id = ?1 AND from_slug = ?2",
+            rusqlite::params![self.tenant_id(), from_slug],
         )?;
         let wiki = extract_wiki_slugs(body);
         let edges = infer_typed_edges(from_slug, page_type, body, &wiki);
         let now = Utc::now().to_rfc3339();
         for edge in edges {
             conn.execute(
-                "INSERT OR IGNORE INTO links (from_slug, to_slug, rel, created_at) VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![from_slug, edge.to_slug, edge.rel, now],
+                "INSERT OR IGNORE INTO links (tenant_id, from_slug, to_slug, rel, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![self.tenant_id(), from_slug, edge.to_slug, edge.rel, now],
             )?;
         }
         Ok(())
@@ -137,7 +175,10 @@ impl BrainEngine {
         body: &str,
         embedder: &dyn Embedder,
     ) -> Result<()> {
-        conn.execute("DELETE FROM chunk_vectors WHERE slug = ?1", [slug])?;
+        conn.execute(
+            "DELETE FROM chunk_vectors WHERE tenant_id = ?1 AND slug = ?2",
+            rusqlite::params![self.tenant_id(), slug],
+        )?;
         let chunks = chunk_text(body, 800);
         if chunks.is_empty() {
             return Ok(());
@@ -148,8 +189,16 @@ impl BrainEngine {
         for (i, (text, vec)) in chunks.iter().zip(vectors.iter()).enumerate() {
             let hash = format!("{:x}", md5_hash(text));
             conn.execute(
-                "INSERT INTO chunk_vectors (slug, chunk_index, dim, vector, text_hash, updated_at) VALUES (?1,?2,?3,?4,?5,?6)",
-                rusqlite::params![slug, i as i64, vec.len() as i64, f32_to_bytes(vec), hash, now],
+                "INSERT INTO chunk_vectors (tenant_id, slug, chunk_index, dim, vector, text_hash, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                rusqlite::params![
+                    self.tenant_id(),
+                    slug,
+                    i as i64,
+                    vec.len() as i64,
+                    f32_to_bytes(vec),
+                    hash,
+                    now
+                ],
             )?;
         }
         Ok(())
@@ -158,9 +207,9 @@ impl BrainEngine {
     pub fn get_page(&self, slug: &str) -> Result<Option<PageRow>> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
-            "SELECT slug, title, page_type, body, source, updated_at FROM pages WHERE slug = ?1 AND deleted = 0",
+            "SELECT slug, title, page_type, body, source, updated_at FROM pages WHERE tenant_id = ?1 AND slug = ?2 AND deleted = 0",
         )?;
-        let mut rows = stmt.query(rusqlite::params![slug])?;
+        let mut rows = stmt.query(rusqlite::params![self.tenant_id(), slug])?;
         if let Some(row) = rows.next()? {
             return Ok(Some(row_to_page(row)?));
         }
@@ -180,15 +229,18 @@ impl BrainEngine {
         if let Some(p) = prefix {
             let like = format!("{p}%");
             let mut stmt = conn.prepare(
-                "SELECT slug, title, page_type, updated_at FROM pages WHERE deleted = 0 AND slug LIKE ?1 ORDER BY updated_at DESC LIMIT ?2",
+                "SELECT slug, title, page_type, updated_at FROM pages WHERE tenant_id = ?1 AND deleted = 0 AND slug LIKE ?2 ORDER BY updated_at DESC LIMIT ?3",
             )?;
-            let rows = stmt.query_map(rusqlite::params![like, limit as i64], map_row)?;
+            let rows = stmt.query_map(
+                rusqlite::params![self.tenant_id(), like, limit as i64],
+                map_row,
+            )?;
             Ok(rows.filter_map(|r| r.ok()).collect())
         } else {
             let mut stmt = conn.prepare(
-                "SELECT slug, title, page_type, updated_at FROM pages WHERE deleted = 0 ORDER BY updated_at DESC LIMIT ?1",
+                "SELECT slug, title, page_type, updated_at FROM pages WHERE tenant_id = ?1 AND deleted = 0 ORDER BY updated_at DESC LIMIT ?2",
             )?;
-            let rows = stmt.query_map(rusqlite::params![limit as i64], map_row)?;
+            let rows = stmt.query_map(rusqlite::params![self.tenant_id(), limit as i64], map_row)?;
             Ok(rows.filter_map(|r| r.ok()).collect())
         }
     }
@@ -212,6 +264,7 @@ impl BrainEngine {
         let embedder = HashEmbedder;
         hybrid_search(
             &self.conn()?,
+            self.tenant_id(),
             &embedder,
             query,
             limit,
@@ -221,15 +274,15 @@ impl BrainEngine {
     }
 
     pub fn search_fts_only(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
-        search_fts(&self.conn()?, query, limit)
+        search_fts(&self.conn()?, self.tenant_id(), query, limit)
     }
 
     pub fn neighbors(&self, slug: &str, limit: usize) -> Result<Vec<LinkRow>> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
-            "SELECT from_slug, to_slug, rel FROM links WHERE from_slug = ?1 OR to_slug = ?1 LIMIT ?2",
+            "SELECT from_slug, to_slug, rel FROM links WHERE tenant_id = ?1 AND (from_slug = ?2 OR to_slug = ?2) LIMIT ?3",
         )?;
-        let rows = stmt.query_map(rusqlite::params![slug, limit as i64], |row| {
+        let rows = stmt.query_map(rusqlite::params![self.tenant_id(), slug, limit as i64], |row| {
             Ok(LinkRow {
                 from_slug: row.get(0)?,
                 to_slug: row.get(1)?,
@@ -293,16 +346,17 @@ impl BrainEngine {
     pub fn add_tag(&self, slug: &str, tag: &str) -> Result<()> {
         let conn = self.conn()?;
         conn.execute(
-            "INSERT OR IGNORE INTO tags (slug, tag, created_at) VALUES (?1, ?2, ?3)",
-            rusqlite::params![slug, tag, Utc::now().to_rfc3339()],
+            "INSERT OR IGNORE INTO tags (tenant_id, slug, tag, created_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![self.tenant_id(), slug, tag, Utc::now().to_rfc3339()],
         )?;
         Ok(())
     }
 
     pub fn get_tags(&self, slug: &str) -> Result<Vec<String>> {
         let conn = self.conn()?;
-        let mut stmt = conn.prepare("SELECT tag FROM tags WHERE slug = ?1")?;
-        let rows = stmt.query_map(rusqlite::params![slug], |r| r.get(0))?;
+        let mut stmt =
+            conn.prepare("SELECT tag FROM tags WHERE tenant_id = ?1 AND slug = ?2")?;
+        let rows = stmt.query_map(rusqlite::params![self.tenant_id(), slug], |r| r.get(0))?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
@@ -381,12 +435,21 @@ impl BrainEngine {
 
     pub fn brain_stats(&self) -> Result<BrainStats> {
         let conn = self.conn()?;
-        let page_count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM pages WHERE deleted = 0", [], |r| {
-                r.get(0)
-            })?;
-        let link_count: i64 = conn.query_row("SELECT COUNT(*) FROM links", [], |r| r.get(0))?;
-        let tag_count: i64 = conn.query_row("SELECT COUNT(*) FROM tags", [], |r| r.get(0))?;
+        let page_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pages WHERE tenant_id = ?1 AND deleted = 0",
+            [self.tenant_id()],
+            |r| r.get(0),
+        )?;
+        let link_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM links WHERE tenant_id = ?1",
+            [self.tenant_id()],
+            |r| r.get(0),
+        )?;
+        let tag_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM tags WHERE tenant_id = ?1",
+            [self.tenant_id()],
+            |r| r.get(0),
+        )?;
         let open_loop_count: i64 =
             conn.query_row("SELECT COUNT(*) FROM open_loops", [], |r| r.get(0))?;
         let fact_count: i64 = conn.query_row("SELECT COUNT(*) FROM facts", [], |r| r.get(0))?;
@@ -409,19 +472,26 @@ impl BrainEngine {
         let mut stmt = conn.prepare(
             r#"
             SELECT p.slug FROM pages p
-            WHERE p.deleted = 0
-              AND NOT EXISTS (SELECT 1 FROM links l WHERE l.to_slug = p.slug)
-            LIMIT ?1
+            WHERE p.tenant_id = ?1 AND p.deleted = 0
+              AND NOT EXISTS (
+                SELECT 1 FROM links l
+                WHERE l.tenant_id = p.tenant_id AND l.to_slug = p.slug
+              )
+            LIMIT ?2
             "#,
         )?;
-        let rows = stmt.query_map([limit as i64], |r| r.get::<_, String>(0))?;
+        let rows = stmt.query_map(rusqlite::params![self.tenant_id(), limit as i64], |r| {
+            r.get::<_, String>(0)
+        })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
     pub fn reindex_all_vectors(&self, embedder: &dyn Embedder) -> Result<usize> {
         let conn = self.conn()?;
-        let mut stmt = conn.prepare("SELECT slug, body FROM pages WHERE deleted = 0")?;
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut stmt = conn.prepare(
+            "SELECT slug, body FROM pages WHERE tenant_id = ?1 AND deleted = 0",
+        )?;
+        let rows = stmt.query_map([self.tenant_id()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
         let mut n = 0usize;
         for row in rows.flatten() {
             self.reindex_page_vectors(&conn, &row.0, &row.1, embedder)?;
@@ -528,9 +598,9 @@ fn infer_search_anchor(engine: &BrainEngine, query: &str) -> Result<Option<Strin
     let q = query.to_ascii_lowercase();
     let conn = engine.conn()?;
     let mut stmt = conn.prepare(
-        "SELECT slug FROM pages WHERE deleted = 0 AND (slug LIKE 'people/%' OR slug LIKE 'companies/%') LIMIT 200",
+        "SELECT slug FROM pages WHERE tenant_id = ?1 AND deleted = 0 AND (slug LIKE 'people/%' OR slug LIKE 'companies/%') LIMIT 200",
     )?;
-    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    let rows = stmt.query_map([engine.tenant_id()], |r| r.get::<_, String>(0))?;
     let mut best: Option<(usize, String)> = None;
     for slug in rows.flatten() {
         let token = slug
