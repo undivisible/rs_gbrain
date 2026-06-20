@@ -5,7 +5,7 @@ edition = "2021"
 description = "Local-first hybrid RAG knowledge brain: SQLite, FTS5, typed graph edges, embeddings, dream cycle — Rust port of gbrain"
 license = "MPL-2.0"
 repository = "https://github.com/undivisible/rs_gbrain"
-keywords = ["knowledge-graph", "rag", "sqlite", "embeddings", "openclaw", "hermes", "agent-memory", "fts5", "gbrain"]
+keywords = ["knowledge-graph", "rag", "sqlite", "embeddings", "gbrain"]
 categories = ["database", "command-line-utilities", "science"]
 
 [[bin]]
