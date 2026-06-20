@@ -10,6 +10,7 @@ pub mod engine;
 pub mod extract;
 pub mod hybrid;
 pub mod local_http;
+pub mod mcp;
 pub mod plugin;
 pub mod query;
 pub mod search;
@@ -22,7 +23,8 @@ pub use embed::{Embedder, HashEmbedder};
 pub use engine::BrainEngine;
 pub use hybrid::HybridConfig;
 pub use plugin::{discover_agent_plugins, AgentPluginKind, AgentPluginSpec};
-pub use query::{format_query_markdown, gather_context};
+pub use mcp::run_stdio;
+pub use query::{format_query_markdown, gather_context, gather_context_with_anchor};
 pub use types::{
     BrainStats, BriefState, GraphQueryResult, LinkRow, PageListItem, PageRow, QueryAnswer,
     SearchHit,

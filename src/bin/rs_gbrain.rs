@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use rs_gbrain::{format_query_markdown, gather_context, BrainEngine};
+use rs_gbrain::{format_query_markdown, BrainEngine};
 use std::io::{self, Read};
 use std::path::PathBuf;
 
@@ -53,6 +53,8 @@ enum Commands {
         query: String,
         #[arg(long, default_value_t = 10)]
         limit: usize,
+        #[arg(long, help = "Graph proximity boost from this slug")]
+        anchor: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -62,11 +64,15 @@ enum Commands {
         #[arg(long, default_value_t = 8)]
         limit: usize,
         #[arg(long)]
+        anchor: Option<String>,
+        #[arg(long)]
         json: bool,
     },
-    /// gbrain: think (same as query locally)
+    /// gbrain: think — retrieval pack (host LLM synthesizes; not upstream LLM think)
     Think {
         question: String,
+        #[arg(long)]
+        anchor: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -100,8 +106,10 @@ enum Commands {
     SyncBrief {
         workspace: PathBuf,
     },
-    /// Local JSON API on 127.0.0.1 (not MCP; requires --features local-http)
+    /// MCP stdio (Claude/Codex: `claude mcp add rs_gbrain -- rs_gbrain serve`)
     Serve {
+        #[arg(long, help = "Loopback JSON API instead of MCP stdio")]
+        http: bool,
         #[arg(long, default_value = "127.0.0.1:8787")]
         bind: String,
     },
@@ -179,20 +187,48 @@ async fn main() -> Result<()> {
         Commands::Delete { slug } => {
             println!("deleted={}", e.delete_page(&slug)?);
         }
-        Commands::Search { query, limit, json } => {
-            let hits = e.search(&query, limit)?;
+        Commands::Search {
+            query,
+            limit,
+            anchor,
+            json,
+        } => {
+            let hits = if let Some(a) = &anchor {
+                e.hybrid_search(&query, limit, Some(a))?
+            } else {
+                e.search(&query, limit)?
+            };
             print_hits(&hits, json)?;
         }
-        Commands::Query { query, limit, json } => {
-            let q = gather_context(&e, &query, limit)?;
+        Commands::Query {
+            query,
+            limit,
+            anchor,
+            json,
+        } => {
+            let q = rs_gbrain::gather_context_with_anchor(
+                &e,
+                &query,
+                limit,
+                anchor.as_deref(),
+            )?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&q)?);
             } else {
                 println!("{}", format_query_markdown(&q));
             }
         }
-        Commands::Think { question, json } => {
-            let q = gather_context(&e, &question, 8)?;
+        Commands::Think {
+            question,
+            anchor,
+            json,
+        } => {
+            let q = rs_gbrain::gather_context_with_anchor(
+                &e,
+                &question,
+                8,
+                anchor.as_deref(),
+            )?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&q)?);
             } else {
@@ -245,9 +281,13 @@ async fn main() -> Result<()> {
             rs_gbrain::sync_workspace_brief(&workspace, &e)?;
             println!("brief synced from {}", workspace.display());
         }
-        Commands::Serve { bind } => {
-            let addr: std::net::SocketAddr = bind.parse()?;
-            rs_gbrain::local_http::serve(addr, e).await?;
+        Commands::Serve { http, bind } => {
+            if http {
+                let addr: std::net::SocketAddr = bind.parse()?;
+                rs_gbrain::local_http::serve(addr, e).await?;
+            } else {
+                rs_gbrain::run_stdio(e)?;
+            }
         }
         Commands::Smoke => run_smoke(&e)?,
         Commands::ClawTest => {
