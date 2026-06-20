@@ -4,22 +4,20 @@ Local **hybrid RAG** knowledge brain (MPL-2.0): SQLite, FTS5, typed graph edges,
 
 **Agent hosts:** OpenClaw (`SKILL.md`), Hermes (`plugin.json`), unthinkclaw (`brain_*` tools).
 
-## Local only (no remote MCP)
+## Local-first + MCP stdio
 
-This project is **local-first**:
-
-- Brain data stays in `~/.rs_gbrain/brain.db` (or `RS_GBRAIN_DB`)
-- **No** gbrain-style remote `serve --http` + OAuth MCP fleet
-- Optional **local** JSON API: `cargo build --features local-http` then `rs_gbrain serve --bind 127.0.0.1:8787` — loopback only, not MCP
+- Brain data: `~/.rs_gbrain/brain.db` (`RS_GBRAIN_DB` / `--db`)
+- **MCP (read + write):** `rs_gbrain serve` — stdio JSON-RPC tools (`put_page`, `get_page`, `search`, `query`, `think`, `graph_query`, `dream`, …)
+- Claude Code: `claude mcp add rs_gbrain -- rs_gbrain serve`
+- Optional loopback JSON (not MCP): `cargo build --features local-http` then `rs_gbrain serve --http --bind 127.0.0.1:8787`
 - Embeddings: `HashEmbedder` in CI; `--features fastembed` for on-device models
-
-Remote MCP / multi-tenant cloud brain is **out of scope** until explicitly added.
+- **Not** upstream: remote OAuth MCP fleet, Postgres/PGLite, company RLS, minions, LLM synthesis inside `think`
 
 ## Features
 
-- Typed edges on write: `works_at`, `reports_to`, `invested_in`, `attended`, `[[slug|rel]]`
+- Typed edges on write: `works_at`, `reports_to`, `invested_in`, `attended`, `founded`, `advises`, `[[slug|rel]]`
 - Hybrid search: BM25 + vectors + graph proximity
-- `query` / `think`: gather + citations + gaps (agent LLM does final synthesis)
+- `query` / `think`: gather + citations + gaps (`think` is retrieval pack — host LLM synthesizes prose)
 - `dream` nightly: open-loop hypotheses, orphan links, vector reindex
 - `sync-brief`: `memory/open-loops.md` + `time-contexts.md` → SQLite brief
 - Tests: unit + `graph_typed`, `nightly_dream`, `smoke`, `claw-test`

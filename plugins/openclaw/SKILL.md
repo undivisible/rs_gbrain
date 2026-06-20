@@ -11,7 +11,15 @@ description: Hybrid RAG brain (FTS + embeddings + typed graph). Works in OpenCla
 2. To persist a correction or fact → `rs_gbrain put <slug> --title "..." --body "..."` (use `[[other/slug]]` for links).
 3. DB: `~/.rs_gbrain/brain.db` unless `RS_GBRAIN_DB` is set.
 
-## Commands
+## MCP (recommended for agents)
+
+```bash
+claude mcp add rs_gbrain -- rs_gbrain serve
+```
+
+Tools: `search`, `put_page`, `get_page`, `query`, `graph_query`, `dream`.
+
+## CLI
 
 ```bash
 rs_gbrain search "Alice Acme" --json
