@@ -13,6 +13,9 @@ struct Cli {
     #[arg(long, env = "RS_GBRAIN_DB")]
     db: Option<PathBuf>,
 
+    #[arg(long, env = "RS_GBRAIN_TENANT", default_value = "default")]
+    tenant: String,
+
     #[command(subcommand)]
     cmd: Commands,
 }
@@ -116,6 +119,33 @@ enum Commands {
     Smoke,
     #[command(name = "claw-test")]
     ClawTest,
+    /// Toy minions: enqueue a job (`dream`, `noop`)
+    #[command(name = "jobs")]
+    Jobs {
+        #[command(subcommand)]
+        cmd: JobsCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum JobsCmd {
+    Add {
+        name: String,
+        #[arg(long)]
+        payload: Option<String>,
+    },
+    List {
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
+    Work {
+        #[arg(long, default_value_t = 1)]
+        max: usize,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn open_engine(cli: &Cli) -> Result<BrainEngine> {
@@ -123,7 +153,7 @@ fn open_engine(cli: &Cli) -> Result<BrainEngine> {
         .db
         .clone()
         .unwrap_or_else(|| BrainEngine::default_home().expect("home"));
-    BrainEngine::open(path)
+    BrainEngine::open_scoped(path, &cli.tenant)
 }
 
 #[tokio::main]
@@ -294,6 +324,35 @@ async fn main() -> Result<()> {
             let r = rs_gbrain::claw_test::run_scripted()?;
             println!("{}", r.message);
         }
+        Commands::Jobs { cmd } => match cmd {
+            JobsCmd::Add { name, payload } => {
+                let id = rs_gbrain::enqueue(&e, &name, payload.as_deref())?;
+                println!("enqueued job {id} ({name})");
+            }
+            JobsCmd::List { limit, json } => {
+                let jobs = rs_gbrain::list_jobs(&e, limit)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&jobs)?);
+                } else {
+                    for j in jobs {
+                        println!("{} {} {} {}", j.id, j.name, j.status, j.created_at);
+                    }
+                }
+            }
+            JobsCmd::Work { max, json } => {
+                let ran = rs_gbrain::work_batch(&e, max)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&ran)?);
+                } else {
+                    for j in &ran {
+                        println!("ran {} -> {}", j.name, j.status);
+                    }
+                    if ran.is_empty() {
+                        println!("no waiting jobs");
+                    }
+                }
+            }
+        },
     }
     Ok(())
 }

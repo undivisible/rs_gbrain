@@ -224,8 +224,30 @@ fn call_tool(engine: &BrainEngine, params: Option<Value>) -> Result<String> {
             let r = run_nightly_cycle(engine, &HashEmbedder)?;
             Ok(serde_json::to_string_pretty(&r)?)
         }
+        "submit_job" => {
+            let name = arg_str(&args, "name")?;
+            let payload = args.get("payload").and_then(|v| v.as_str());
+            let id = crate::minions::enqueue(engine, &name, payload)?;
+            Ok(json!({ "id": id, "name": name }).to_string())
+        }
+        "list_jobs" => {
+            let limit = arg_usize(&args, "limit").unwrap_or(20);
+            let jobs = crate::minions::list_jobs(engine, limit)?;
+            Ok(serde_json::to_string_pretty(&jobs)?)
+        }
+        "work_jobs" => {
+            let max = arg_usize(&args, "max").unwrap_or(1);
+            let ran = crate::minions::work_batch(engine, max)?;
+            Ok(serde_json::to_string_pretty(&ran)?)
+        }
         "health" => Ok(
-            json!({ "ok": true, "name": SERVER_NAME, "version": SERVER_VERSION }).to_string(),
+            json!({
+                "ok": true,
+                "name": SERVER_NAME,
+                "version": SERVER_VERSION,
+                "tenant_id": engine.tenant_id()
+            })
+            .to_string(),
         ),
         other => anyhow::bail!("unknown tool: {other}"),
     }
@@ -381,6 +403,31 @@ fn tool_definitions() -> Vec<Value> {
             "dream",
             "Run nightly dream cycle locally",
             json!({ "type": "object", "properties": {} }),
+        ),
+        (
+            "submit_job",
+            "Enqueue toy minion job (dream, noop)",
+            json!({
+                "type": "object",
+                "properties": { "name": { "type": "string" }, "payload": { "type": "string" } },
+                "required": ["name"]
+            }),
+        ),
+        (
+            "list_jobs",
+            "List minion jobs for current tenant",
+            json!({
+                "type": "object",
+                "properties": { "limit": { "type": "integer" } }
+            }),
+        ),
+        (
+            "work_jobs",
+            "Run up to N waiting jobs",
+            json!({
+                "type": "object",
+                "properties": { "max": { "type": "integer" } }
+            }),
         ),
         (
             "health",

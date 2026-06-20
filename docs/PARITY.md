@@ -42,9 +42,14 @@
 | `get_page`, `list_pages`, `search`, `query`, `think`, `graph_query`, `get_tags`, `get_stats`, `health` | read |
 | `put_page`, `delete_page`, `add_link`, `add_tag`, `dream` | write |
 
+## Toy (this repo)
+
+- **Tenant scope:** `--tenant` / `RS_GBRAIN_TENANT` filters pages/links/tags/search (not crypto-safe RLS).
+- **Minions-lite:** `rs_gbrain jobs add dream`, `rs_gbrain jobs work`, MCP `submit_job` / `work_jobs`.
+
 ## Not in scope (use upstream gbrain)
 
-Remote OAuth MCP, PGLite/Postgres fleet, in-process LLM `think`, minions, skillpacks, company RLS, enrich/takes/LSD, etc.
+Postgres RLS, OAuth, PGLite fleet, in-process LLM `think`, full minions supervisor, skillpacks, enrich/takes/LSD, etc.
 
 ## unthinkclaw tools
 
