@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all-targets
+      - run: cargo run --quiet -- smoke
+
+  gbrain-smoke-compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: rs_gbrain smoke
+        run: cargo run --quiet -- smoke
+      - uses: oven-sh/setup-bun@v2
+      - name: Clone upstream gbrain claw-test shape (optional)
+        run: |
+          git clone --depth 1 https://github.com/garrytan/gbrain.git /tmp/gbrain || true
+          if [ -f /tmp/gbrain/src/commands/claw-test.ts ]; then
+            echo "upstream claw-test exists — compare manually; rs_gbrain smoke is the Rust gate"
+            head -30 /tmp/gbrain/src/commands/claw-test.ts
+          fi
