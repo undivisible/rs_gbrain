@@ -43,7 +43,10 @@ pub fn list_jobs(engine: &BrainEngine, limit: usize) -> Result<Vec<MinionJob>> {
     let mut stmt = conn.prepare(
         "SELECT id, tenant_id, name, payload, status, created_at, error FROM minion_jobs WHERE tenant_id = ?1 ORDER BY id DESC LIMIT ?2",
     )?;
-    let rows = stmt.query_map(rusqlite::params![engine.tenant_id(), limit as i64], row_to_job)?;
+    let rows = stmt.query_map(
+        rusqlite::params![engine.tenant_id(), limit as i64],
+        row_to_job,
+    )?;
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
@@ -81,7 +84,7 @@ fn claim_next(engine: &BrainEngine) -> Result<Option<MinionJob>> {
     let Some(row) = rows.next()? else {
         return Ok(None);
     };
-    let job = row_to_job(&row)?;
+    let job = row_to_job(row)?;
     let now = Utc::now().to_rfc3339();
     let n = conn.execute(
         "UPDATE minion_jobs SET status = 'active', started_at = ?2 WHERE id = ?1 AND status = 'waiting'",
@@ -111,7 +114,7 @@ fn job_with_status(engine: &BrainEngine, id: i64) -> Result<MinionJob> {
     )?;
     let mut rows = stmt.query([id])?;
     let row = rows.next()?.context("job row")?;
-    Ok(row_to_job(&row)?)
+    Ok(row_to_job(row)?)
 }
 
 fn run_handler(engine: &BrainEngine, name: &str) -> Result<()> {

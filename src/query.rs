@@ -58,7 +58,9 @@ pub fn gather_context_with_anchor(
             "Local rs_gbrain: bullets are retrieval context only — host LLM should synthesize prose (unlike upstream gbrain think).".to_string(),
         );
         if citations.len() < 3 {
-            gaps.push("Few sources matched; brain may be missing recent email/Slack context.".to_string());
+            gaps.push(
+                "Few sources matched; brain may be missing recent email/Slack context.".to_string(),
+            );
         }
     };
 

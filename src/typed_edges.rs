@@ -171,6 +171,8 @@ mod tests {
         let body = "Founded [[companies/acme]].";
         let w = extract_wiki_slugs(body);
         let e = infer_typed_edges("people/alice", "person", body, &w);
-        assert!(e.iter().any(|x| x.rel == REL_FOUNDED && x.to_slug == "companies/acme"));
+        assert!(e
+            .iter()
+            .any(|x| x.rel == REL_FOUNDED && x.to_slug == "companies/acme"));
     }
 }

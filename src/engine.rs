@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 
 use crate::db;
 use crate::embed::{f32_to_bytes, Embedder, HashEmbedder};
-use crate::tenant::{tenant_from_env, TenantScope};
 use crate::extract::extract_wiki_slugs;
 use crate::hybrid::{hybrid_search, HybridConfig};
 use crate::search::search_fts;
+use crate::tenant::{tenant_from_env, TenantScope};
 use crate::typed_edges::infer_typed_edges;
 use crate::types::{
     BrainStats, BriefState, GraphQueryResult, LinkRow, OpenLoop, PageListItem, PageRow, SearchHit,
@@ -88,15 +88,7 @@ impl BrainEngine {
                 deleted = 0,
                 updated_at = excluded.updated_at
             "#,
-            rusqlite::params![
-                self.tenant_id(),
-                slug,
-                title,
-                page_type,
-                body,
-                source,
-                now
-            ],
+            rusqlite::params![self.tenant_id(), slug, title, page_type, body, source, now],
         )?;
         self.reindex_links(&conn, slug, page_type, body)?;
         let embedder = HashEmbedder;
@@ -240,7 +232,8 @@ impl BrainEngine {
             let mut stmt = conn.prepare(
                 "SELECT slug, title, page_type, updated_at FROM pages WHERE tenant_id = ?1 AND deleted = 0 ORDER BY updated_at DESC LIMIT ?2",
             )?;
-            let rows = stmt.query_map(rusqlite::params![self.tenant_id(), limit as i64], map_row)?;
+            let rows =
+                stmt.query_map(rusqlite::params![self.tenant_id(), limit as i64], map_row)?;
             Ok(rows.filter_map(|r| r.ok()).collect())
         }
     }
@@ -282,13 +275,16 @@ impl BrainEngine {
         let mut stmt = conn.prepare(
             "SELECT from_slug, to_slug, rel FROM links WHERE tenant_id = ?1 AND (from_slug = ?2 OR to_slug = ?2) LIMIT ?3",
         )?;
-        let rows = stmt.query_map(rusqlite::params![self.tenant_id(), slug, limit as i64], |row| {
-            Ok(LinkRow {
-                from_slug: row.get(0)?,
-                to_slug: row.get(1)?,
-                rel: row.get(2)?,
-            })
-        })?;
+        let rows = stmt.query_map(
+            rusqlite::params![self.tenant_id(), slug, limit as i64],
+            |row| {
+                Ok(LinkRow {
+                    from_slug: row.get(0)?,
+                    to_slug: row.get(1)?,
+                    rel: row.get(2)?,
+                })
+            },
+        )?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
@@ -354,8 +350,7 @@ impl BrainEngine {
 
     pub fn get_tags(&self, slug: &str) -> Result<Vec<String>> {
         let conn = self.conn()?;
-        let mut stmt =
-            conn.prepare("SELECT tag FROM tags WHERE tenant_id = ?1 AND slug = ?2")?;
+        let mut stmt = conn.prepare("SELECT tag FROM tags WHERE tenant_id = ?1 AND slug = ?2")?;
         let rows = stmt.query_map(rusqlite::params![self.tenant_id(), slug], |r| r.get(0))?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
@@ -488,10 +483,11 @@ impl BrainEngine {
 
     pub fn reindex_all_vectors(&self, embedder: &dyn Embedder) -> Result<usize> {
         let conn = self.conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT slug, body FROM pages WHERE tenant_id = ?1 AND deleted = 0",
-        )?;
-        let rows = stmt.query_map([self.tenant_id()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut stmt =
+            conn.prepare("SELECT slug, body FROM pages WHERE tenant_id = ?1 AND deleted = 0")?;
+        let rows = stmt.query_map([self.tenant_id()], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?;
         let mut n = 0usize;
         for row in rows.flatten() {
             self.reindex_page_vectors(&conn, &row.0, &row.1, embedder)?;
@@ -603,11 +599,7 @@ fn infer_search_anchor(engine: &BrainEngine, query: &str) -> Result<Option<Strin
     let rows = stmt.query_map([engine.tenant_id()], |r| r.get::<_, String>(0))?;
     let mut best: Option<(usize, String)> = None;
     for slug in rows.flatten() {
-        let token = slug
-            .rsplit('/')
-            .next()
-            .unwrap_or(&slug)
-            .replace('-', " ");
+        let token = slug.rsplit('/').next().unwrap_or(&slug).replace('-', " ");
         if token.len() < 3 {
             continue;
         }

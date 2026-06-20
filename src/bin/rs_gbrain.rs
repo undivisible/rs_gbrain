@@ -236,12 +236,7 @@ async fn main() -> Result<()> {
             anchor,
             json,
         } => {
-            let q = rs_gbrain::gather_context_with_anchor(
-                &e,
-                &query,
-                limit,
-                anchor.as_deref(),
-            )?;
+            let q = rs_gbrain::gather_context_with_anchor(&e, &query, limit, anchor.as_deref())?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&q)?);
             } else {
@@ -253,12 +248,7 @@ async fn main() -> Result<()> {
             anchor,
             json,
         } => {
-            let q = rs_gbrain::gather_context_with_anchor(
-                &e,
-                &question,
-                8,
-                anchor.as_deref(),
-            )?;
+            let q = rs_gbrain::gather_context_with_anchor(&e, &question, 8, anchor.as_deref())?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&q)?);
             } else {

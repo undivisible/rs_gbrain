@@ -128,7 +128,12 @@ pub fn hybrid_search(
     Ok(ranked.into_iter().take(limit).map(|(_, _, h)| h).collect())
 }
 
-fn graph_slugs(conn: &Connection, tenant_id: &str, anchor: &str, depth: usize) -> Result<Vec<String>> {
+fn graph_slugs(
+    conn: &Connection,
+    tenant_id: &str,
+    anchor: &str,
+    depth: usize,
+) -> Result<Vec<String>> {
     let mut out = vec![anchor.to_string()];
     let mut frontier = vec![anchor.to_string()];
     for _ in 0..depth {
@@ -164,9 +169,8 @@ fn snippet_for_slug(conn: &Connection, tenant_id: &str, slug: &str) -> Result<St
 }
 
 fn title_for_slug(conn: &Connection, tenant_id: &str, slug: &str) -> Result<String> {
-    let mut stmt = conn.prepare(
-        "SELECT title FROM pages WHERE tenant_id = ?1 AND slug = ?2 AND deleted = 0",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT title FROM pages WHERE tenant_id = ?1 AND slug = ?2 AND deleted = 0")?;
     let mut rows = stmt.query(rusqlite::params![tenant_id, slug])?;
     if let Some(row) = rows.next()? {
         return Ok(row.get(0)?);

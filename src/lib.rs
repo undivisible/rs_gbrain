@@ -13,9 +13,9 @@ pub mod local_http;
 pub mod mcp;
 pub mod minions;
 pub mod plugin;
-pub mod tenant;
 pub mod query;
 pub mod search;
+pub mod tenant;
 pub mod typed_edges;
 pub mod types;
 
@@ -23,12 +23,12 @@ pub use brief_sync::sync_workspace_brief;
 pub use dream::{run_dream_cycle, run_nightly_cycle, DreamReport};
 pub use embed::{Embedder, HashEmbedder};
 pub use engine::BrainEngine;
-pub use minions::{enqueue, list_jobs, work_batch, work_once, MinionJob};
-pub use tenant::{tenant_from_env, TenantScope, DEFAULT_TENANT};
 pub use hybrid::HybridConfig;
-pub use plugin::{discover_agent_plugins, AgentPluginKind, AgentPluginSpec};
 pub use mcp::run_stdio;
+pub use minions::{enqueue, list_jobs, work_batch, work_once, MinionJob};
+pub use plugin::{discover_agent_plugins, AgentPluginKind, AgentPluginSpec};
 pub use query::{format_query_markdown, gather_context, gather_context_with_anchor};
+pub use tenant::{tenant_from_env, TenantScope, DEFAULT_TENANT};
 pub use types::{
     BrainStats, BriefState, GraphQueryResult, LinkRow, PageListItem, PageRow, QueryAnswer,
     SearchHit,

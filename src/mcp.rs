@@ -177,7 +177,11 @@ fn call_tool(engine: &BrainEngine, params: Option<Value>) -> Result<String> {
             let limit = arg_usize(&args, "limit").unwrap_or(8);
             let anchor = args.get("anchor").and_then(|v| v.as_str());
             let q = gather_context_with_anchor(engine, question, limit, anchor)?;
-            if args.get("markdown").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if args
+                .get("markdown")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 Ok(format_query_markdown(&q))
             } else {
                 Ok(serde_json::to_string_pretty(&q)?)
@@ -240,15 +244,13 @@ fn call_tool(engine: &BrainEngine, params: Option<Value>) -> Result<String> {
             let ran = crate::minions::work_batch(engine, max)?;
             Ok(serde_json::to_string_pretty(&ran)?)
         }
-        "health" => Ok(
-            json!({
-                "ok": true,
-                "name": SERVER_NAME,
-                "version": SERVER_VERSION,
-                "tenant_id": engine.tenant_id()
-            })
-            .to_string(),
-        ),
+        "health" => Ok(json!({
+            "ok": true,
+            "name": SERVER_NAME,
+            "version": SERVER_VERSION,
+            "tenant_id": engine.tenant_id()
+        })
+        .to_string()),
         other => anyhow::bail!("unknown tool: {other}"),
     }
 }
