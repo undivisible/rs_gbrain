@@ -26,4 +26,8 @@ fn put_search_graph() {
     assert!(!hits.is_empty());
     let links = e.neighbors("people/alice", 10).unwrap();
     assert!(links.iter().any(|l| l.to_slug == "companies/acme"));
+    let q = rs_gbrain::gather_context(&e, "Alice CTO", 5).unwrap();
+    assert!(!q.answer.is_empty());
+    let g = e.graph_query("people/alice", 2).unwrap();
+    assert!(g.nodes.len() >= 2);
 }

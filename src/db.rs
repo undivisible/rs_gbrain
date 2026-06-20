@@ -20,6 +20,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             page_type TEXT NOT NULL DEFAULT 'note',
             body TEXT NOT NULL,
             source TEXT NOT NULL DEFAULT 'local',
+            deleted INTEGER NOT NULL DEFAULT 0,
             updated_at TEXT NOT NULL
         );
 
@@ -29,6 +30,44 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             rel TEXT NOT NULL,
             created_at TEXT NOT NULL,
             PRIMARY KEY (from_slug, to_slug, rel)
+        );
+
+        CREATE TABLE IF NOT EXISTS tags (
+            slug TEXT NOT NULL,
+            tag TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (slug, tag)
+        );
+
+        CREATE TABLE IF NOT EXISTS open_loops (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS time_contexts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            until_date TEXT,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS facts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subject_slug TEXT NOT NULL,
+            predicate TEXT NOT NULL,
+            object_text TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 0.8,
+            source TEXT NOT NULL DEFAULT 'local',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS timeline (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT NOT NULL,
+            entry TEXT NOT NULL,
+            created_at TEXT NOT NULL
         );
 
         CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
@@ -41,7 +80,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
 
         CREATE TRIGGER IF NOT EXISTS pages_ai AFTER INSERT ON pages BEGIN
             INSERT INTO pages_fts(rowid, slug, title, body)
-            VALUES (new.rowid, new.slug, new.title, new.body);
+            SELECT new.rowid, new.slug, new.title, new.body WHERE new.deleted = 0;
         END;
 
         CREATE TRIGGER IF NOT EXISTS pages_ad AFTER DELETE ON pages BEGIN
@@ -53,12 +92,23 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             INSERT INTO pages_fts(pages_fts, rowid, slug, title, body)
             VALUES ('delete', old.rowid, old.slug, old.title, old.body);
             INSERT INTO pages_fts(rowid, slug, title, body)
-            VALUES (new.rowid, new.slug, new.title, new.body);
+            SELECT new.rowid, new.slug, new.title, new.body WHERE new.deleted = 0;
         END;
         "#,
     )?;
+    let _ = conn.execute(
+        "ALTER TABLE pages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0",
+        [],
+    );
+    rebuild_fts_if_needed(conn)?;
+    Ok(())
+}
+
+fn rebuild_fts_if_needed(conn: &Connection) -> Result<()> {
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM pages_fts", [], |r| r.get(0))?;
-    let pages: i64 = conn.query_row("SELECT COUNT(*) FROM pages", [], |r| r.get(0))?;
+    let pages: i64 = conn.query_row("SELECT COUNT(*) FROM pages WHERE deleted = 0", [], |r| {
+        r.get(0)
+    })?;
     if pages > 0 && count == 0 {
         conn.execute("INSERT INTO pages_fts(pages_fts) VALUES('rebuild')", [])?;
     }
