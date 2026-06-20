@@ -1,4 +1,4 @@
-use rs_gbrain::BrainEngine;
+use gbrain::BrainEngine;
 
 #[test]
 fn tenants_do_not_see_each_others_pages() {

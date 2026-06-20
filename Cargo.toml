@@ -1,8 +1,8 @@
 [package]
-name = "rs_gbrain"
+name = "gbrain"
 version = "0.1.0"
 edition = "2021"
-description = "Local-first hybrid RAG knowledge brain: SQLite, FTS5, typed graph edges, embeddings, dream cycle — OpenClaw & Hermes plugins"
+description = "Local-first hybrid RAG knowledge brain: SQLite, FTS5, typed graph edges, embeddings, dream cycle — Rust port of gbrain"
 license = "MPL-2.0"
 repository = "https://github.com/undivisible/rs_gbrain"
 keywords = ["knowledge-graph", "rag", "sqlite", "embeddings", "openclaw", "hermes", "agent-memory", "fts5", "gbrain"]

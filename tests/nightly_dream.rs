@@ -1,4 +1,4 @@
-use rs_gbrain::{run_nightly_cycle, BrainEngine, HashEmbedder};
+use gbrain::{run_nightly_cycle, BrainEngine, HashEmbedder};
 use tempfile::tempdir;
 
 #[test]

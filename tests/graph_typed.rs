@@ -1,5 +1,5 @@
-use rs_gbrain::typed_edges::REL_WORKS_AT;
-use rs_gbrain::BrainEngine;
+use gbrain::typed_edges::REL_WORKS_AT;
+use gbrain::BrainEngine;
 use tempfile::tempdir;
 
 #[test]

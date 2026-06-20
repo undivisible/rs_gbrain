@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use rs_gbrain::{format_query_markdown, BrainEngine};
+use gbrain::{format_query_markdown, BrainEngine};
 use std::io::{self, Read};
 use std::path::PathBuf;
 
@@ -236,7 +236,7 @@ async fn main() -> Result<()> {
             anchor,
             json,
         } => {
-            let q = rs_gbrain::gather_context_with_anchor(&e, &query, limit, anchor.as_deref())?;
+            let q = gbrain::gather_context_with_anchor(&e, &query, limit, anchor.as_deref())?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&q)?);
             } else {
@@ -248,7 +248,7 @@ async fn main() -> Result<()> {
             anchor,
             json,
         } => {
-            let q = rs_gbrain::gather_context_with_anchor(&e, &question, 8, anchor.as_deref())?;
+            let q = gbrain::gather_context_with_anchor(&e, &question, 8, anchor.as_deref())?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&q)?);
             } else {
@@ -291,36 +291,36 @@ async fn main() -> Result<()> {
             println!("imported {}", e.import_markdown_dir(&path)?);
         }
         Commands::Dream => {
-            let r = rs_gbrain::run_nightly_cycle(&e, &rs_gbrain::HashEmbedder)?;
+            let r = gbrain::run_nightly_cycle(&e, &gbrain::HashEmbedder)?;
             println!(
                 "dream hypotheses={} links={} vectors={} loops_closed={}",
                 r.hypothesis_pages, r.links_added, r.chunks_indexed, r.loops_closed
             );
         }
         Commands::SyncBrief { workspace } => {
-            rs_gbrain::sync_workspace_brief(&workspace, &e)?;
+            gbrain::sync_workspace_brief(&workspace, &e)?;
             println!("brief synced from {}", workspace.display());
         }
         Commands::Serve { http, bind } => {
             if http {
                 let addr: std::net::SocketAddr = bind.parse()?;
-                rs_gbrain::local_http::serve(addr, e).await?;
+                gbrain::local_http::serve(addr, e).await?;
             } else {
-                rs_gbrain::run_stdio(e)?;
+                gbrain::run_stdio(e)?;
             }
         }
         Commands::Smoke => run_smoke(&e)?,
         Commands::ClawTest => {
-            let r = rs_gbrain::claw_test::run_scripted()?;
+            let r = gbrain::claw_test::run_scripted()?;
             println!("{}", r.message);
         }
         Commands::Jobs { cmd } => match cmd {
             JobsCmd::Add { name, payload } => {
-                let id = rs_gbrain::enqueue(&e, &name, payload.as_deref())?;
+                let id = gbrain::enqueue(&e, &name, payload.as_deref())?;
                 println!("enqueued job {id} ({name})");
             }
             JobsCmd::List { limit, json } => {
-                let jobs = rs_gbrain::list_jobs(&e, limit)?;
+                let jobs = gbrain::list_jobs(&e, limit)?;
                 if json {
                     println!("{}", serde_json::to_string_pretty(&jobs)?);
                 } else {
@@ -330,7 +330,7 @@ async fn main() -> Result<()> {
                 }
             }
             JobsCmd::Work { max, json } => {
-                let ran = rs_gbrain::work_batch(&e, max)?;
+                let ran = gbrain::work_batch(&e, max)?;
                 if json {
                     println!("{}", serde_json::to_string_pretty(&ran)?);
                 } else {
@@ -347,7 +347,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn print_hits(hits: &[rs_gbrain::SearchHit], json: bool) -> Result<()> {
+fn print_hits(hits: &[gbrain::SearchHit], json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(hits)?);
     } else if hits.is_empty() {
