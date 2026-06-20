@@ -6,7 +6,20 @@ use crate::engine::BrainEngine;
 use crate::types::QueryAnswer;
 
 pub fn gather_context(engine: &BrainEngine, question: &str, limit: usize) -> Result<QueryAnswer> {
-    let hits = engine.hybrid_search(question, limit, None)?;
+    gather_context_with_anchor(engine, question, limit, None)
+}
+
+pub fn gather_context_with_anchor(
+    engine: &BrainEngine,
+    question: &str,
+    limit: usize,
+    anchor: Option<&str>,
+) -> Result<QueryAnswer> {
+    let hits = if let Some(a) = anchor {
+        engine.hybrid_search(question, limit, Some(a))?
+    } else {
+        engine.search_with_graph_hint(question, limit)?
+    };
     let mut citations = hits.clone();
     if citations.is_empty() {
         let words: Vec<&str> = question
@@ -37,10 +50,16 @@ pub fn gather_context(engine: &BrainEngine, question: &str, limit: usize) -> Res
         )
     };
 
-    let gaps = if citations.is_empty() {
-        vec!["Brain has no indexed content for this question.".to_string()]
+    let mut gaps = Vec::new();
+    if citations.is_empty() {
+        gaps.push("Brain has no indexed content for this question.".to_string());
     } else {
-        vec![]
+        gaps.push(
+            "Local rs_gbrain: bullets are retrieval context only — host LLM should synthesize prose (unlike upstream gbrain think).".to_string(),
+        );
+        if citations.len() < 3 {
+            gaps.push("Few sources matched; brain may be missing recent email/Slack context.".to_string());
+        }
     };
 
     Ok(QueryAnswer {

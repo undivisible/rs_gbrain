@@ -194,7 +194,13 @@ impl BrainEngine {
     }
 
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
-        self.hybrid_search(query, limit, None)
+        self.search_with_graph_hint(query, limit)
+    }
+
+    /// Hybrid search; if query mentions a known `people/` or `companies/` slug, boost graph neighbors.
+    pub fn search_with_graph_hint(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
+        let anchor = infer_search_anchor(self, query)?;
+        self.hybrid_search(query, limit, anchor.as_deref())
     }
 
     pub fn hybrid_search(
@@ -516,4 +522,31 @@ fn md5_hash(s: &str) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     s.hash(&mut h);
     h.finish()
+}
+
+fn infer_search_anchor(engine: &BrainEngine, query: &str) -> Result<Option<String>> {
+    let q = query.to_ascii_lowercase();
+    let conn = engine.conn()?;
+    let mut stmt = conn.prepare(
+        "SELECT slug FROM pages WHERE deleted = 0 AND (slug LIKE 'people/%' OR slug LIKE 'companies/%') LIMIT 200",
+    )?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    let mut best: Option<(usize, String)> = None;
+    for slug in rows.flatten() {
+        let token = slug
+            .rsplit('/')
+            .next()
+            .unwrap_or(&slug)
+            .replace('-', " ");
+        if token.len() < 3 {
+            continue;
+        }
+        if q.contains(&token) || q.contains(slug.as_str()) {
+            let score = token.len();
+            if best.as_ref().map(|b| score > b.0).unwrap_or(true) {
+                best = Some((score, slug));
+            }
+        }
+    }
+    Ok(best.map(|(_, s)| s))
 }
