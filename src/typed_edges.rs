@@ -9,6 +9,8 @@ pub const REL_REPORTS_TO: &str = "reports_to";
 pub const REL_INVESTED_IN: &str = "invested_in";
 pub const REL_ATTENDED: &str = "attended";
 pub const REL_KNOWS: &str = "knows";
+pub const REL_FOUNDED: &str = "founded";
+pub const REL_ADVISES: &str = "advises";
 pub const REL_RELATED_TO: &str = "related_to";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +42,16 @@ fn invested_re() -> &'static Regex {
 fn attended_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"(?i)attended\s+\[\[([a-zA-Z0-9_./-]+)\]\]").unwrap())
+}
+
+fn founded_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?i)founded\s+\[\[([a-zA-Z0-9_./-]+)\]\]").unwrap())
+}
+
+fn advises_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?i)advises?\s+\[\[([a-zA-Z0-9_./-]+)\]\]").unwrap())
 }
 
 pub fn infer_typed_edges(
@@ -94,6 +106,16 @@ pub fn infer_typed_edges(
             push(&mut edges, &mut seen, m.as_str(), REL_ATTENDED);
         }
     }
+    for cap in founded_re().captures_iter(body) {
+        if let Some(m) = cap.get(1) {
+            push(&mut edges, &mut seen, m.as_str(), REL_FOUNDED);
+        }
+    }
+    for cap in advises_re().captures_iter(body) {
+        if let Some(m) = cap.get(1) {
+            push(&mut edges, &mut seen, m.as_str(), REL_ADVISES);
+        }
+    }
 
     let pt = page_type.to_ascii_lowercase();
     for slug in wiki_slugs {
@@ -142,5 +164,13 @@ mod tests {
         let w = extract_wiki_slugs(body);
         let e = infer_typed_edges("people/alice", "person", body, &w);
         assert!(e.iter().any(|x| x.rel == REL_REPORTS_TO));
+    }
+
+    #[test]
+    fn founded_phrase() {
+        let body = "Founded [[companies/acme]].";
+        let w = extract_wiki_slugs(body);
+        let e = infer_typed_edges("people/alice", "person", body, &w);
+        assert!(e.iter().any(|x| x.rel == REL_FOUNDED && x.to_slug == "companies/acme"));
     }
 }
