@@ -225,7 +225,11 @@ fn main() -> Result<()> {
             println!("imported {}", e.import_markdown_dir(&path)?);
         }
         Commands::Dream => {
-            println!("dream pages {}", rs_gbrain::dream::run_dream_cycle(&e)?);
+            let r = rs_gbrain::run_nightly_cycle(&e, &rs_gbrain::HashEmbedder)?;
+            println!(
+                "dream hypotheses={} links={} vectors={} loops_closed={}",
+                r.hypothesis_pages, r.links_added, r.chunks_indexed, r.loops_closed
+            );
         }
         Commands::Smoke => run_smoke(&e)?,
         Commands::ClawTest => {

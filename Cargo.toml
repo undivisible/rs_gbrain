@@ -2,11 +2,11 @@
 name = "rs_gbrain"
 version = "0.1.0"
 edition = "2021"
-description = "Local SQLite personal knowledge brain — gbrain-shaped, no OAuth"
-license = "MIT"
+description = "Local-first hybrid RAG knowledge brain: SQLite, FTS5, typed graph edges, embeddings, dream cycle — OpenClaw & Hermes plugins"
+license = "MPL-2.0"
 repository = "https://github.com/undivisible/rs_gbrain"
-keywords = ["knowledge", "rag", "sqlite", "agent", "openclaw"]
-categories = ["database", "command-line-utilities"]
+keywords = ["knowledge-graph", "rag", "sqlite", "embeddings", "openclaw", "hermes", "agent-memory", "fts5", "gbrain"]
+categories = ["database", "command-line-utilities", "science"]
 
 [[bin]]
 name = "rs_gbrain"
@@ -24,6 +24,14 @@ tempfile = "3"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[features]
+default = []
+fastembed = ["dep:fastembed"]
+
+[dependencies.fastembed]
+version = "4"
+optional = true
 
 [dev-dependencies]
 tempfile = "3"

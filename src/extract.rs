@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 fn wiki_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\[\[([a-zA-Z0-9_./-]+)\]\]").unwrap())
+    RE.get_or_init(|| Regex::new(r"\[\[([a-zA-Z0-9_./-]+)(?:\|[^\]]+)?\]\]").unwrap())
 }
 
 pub fn extract_wiki_slugs(body: &str) -> Vec<String> {

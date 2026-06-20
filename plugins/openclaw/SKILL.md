@@ -1,6 +1,6 @@
 ---
 name: rs_gbrain
-description: Local SQLite brain — search and file pages before answering about people, companies, or past context.
+description: Hybrid RAG brain (FTS + embeddings + typed graph). Works in OpenClaw, Hermes, and unthinkclaw.
 ---
 
 # rs_gbrain (OpenClaw)

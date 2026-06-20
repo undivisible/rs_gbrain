@@ -5,8 +5,11 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::db;
+use crate::embed::{f32_to_bytes, Embedder, HashEmbedder};
 use crate::extract::extract_wiki_slugs;
+use crate::hybrid::{hybrid_search, HybridConfig};
 use crate::search::search_fts;
+use crate::typed_edges::infer_typed_edges;
 use crate::types::{
     BrainStats, BriefState, GraphQueryResult, LinkRow, OpenLoop, PageListItem, PageRow, SearchHit,
 };
@@ -63,7 +66,26 @@ impl BrainEngine {
             "#,
             rusqlite::params![slug, title, page_type, body, source, now],
         )?;
-        self.reindex_links(&conn, slug, body)?;
+        self.reindex_links(&conn, slug, page_type, body)?;
+        let embedder = HashEmbedder;
+        self.reindex_page_vectors(&conn, slug, body, &embedder)?;
+        Ok(())
+    }
+
+    pub fn put_page_with_embedder(
+        &self,
+        slug: &str,
+        title: &str,
+        page_type: &str,
+        body: &str,
+        source: &str,
+        embedder: Option<&dyn Embedder>,
+    ) -> Result<()> {
+        self.put_page(slug, title, page_type, body, source)?;
+        if let Some(e) = embedder {
+            let conn = self.conn()?;
+            self.reindex_page_vectors(&conn, slug, body, e)?;
+        }
         Ok(())
     }
 
@@ -85,20 +107,49 @@ impl BrainEngine {
         Ok(())
     }
 
-    fn reindex_links(&self, conn: &Connection, from_slug: &str, body: &str) -> Result<()> {
+    fn reindex_links(
+        &self,
+        conn: &Connection,
+        from_slug: &str,
+        page_type: &str,
+        body: &str,
+    ) -> Result<()> {
         conn.execute(
-            "DELETE FROM links WHERE from_slug = ?1 AND rel = 'links_to'",
+            "DELETE FROM links WHERE from_slug = ?1",
             rusqlite::params![from_slug],
         )?;
+        let wiki = extract_wiki_slugs(body);
+        let edges = infer_typed_edges(from_slug, page_type, body, &wiki);
         let now = Utc::now().to_rfc3339();
-        for to in extract_wiki_slugs(body) {
-            let to = to.trim_matches('/');
-            if to.is_empty() || to == from_slug {
-                continue;
-            }
+        for edge in edges {
             conn.execute(
-                "INSERT OR IGNORE INTO links (from_slug, to_slug, rel, created_at) VALUES (?1, ?2, 'links_to', ?3)",
-                rusqlite::params![from_slug, to, now],
+                "INSERT OR IGNORE INTO links (from_slug, to_slug, rel, created_at) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![from_slug, edge.to_slug, edge.rel, now],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn reindex_page_vectors(
+        &self,
+        conn: &Connection,
+        slug: &str,
+        body: &str,
+        embedder: &dyn Embedder,
+    ) -> Result<()> {
+        conn.execute("DELETE FROM chunk_vectors WHERE slug = ?1", [slug])?;
+        let chunks = chunk_text(body, 800);
+        if chunks.is_empty() {
+            return Ok(());
+        }
+        let refs: Vec<&str> = chunks.iter().map(|s| s.as_str()).collect();
+        let vectors = embedder.embed(&refs)?;
+        let now = Utc::now().to_rfc3339();
+        for (i, (text, vec)) in chunks.iter().zip(vectors.iter()).enumerate() {
+            let hash = format!("{:x}", md5_hash(text));
+            conn.execute(
+                "INSERT INTO chunk_vectors (slug, chunk_index, dim, vector, text_hash, updated_at) VALUES (?1,?2,?3,?4,?5,?6)",
+                rusqlite::params![slug, i as i64, vec.len() as i64, f32_to_bytes(vec), hash, now],
             )?;
         }
         Ok(())
@@ -143,6 +194,27 @@ impl BrainEngine {
     }
 
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
+        self.hybrid_search(query, limit, None)
+    }
+
+    pub fn hybrid_search(
+        &self,
+        query: &str,
+        limit: usize,
+        graph_anchor: Option<&str>,
+    ) -> Result<Vec<SearchHit>> {
+        let embedder = HashEmbedder;
+        hybrid_search(
+            &self.conn()?,
+            &embedder,
+            query,
+            limit,
+            graph_anchor,
+            &HybridConfig::default(),
+        )
+    }
+
+    pub fn search_fts_only(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
         search_fts(&self.conn()?, query, limit)
     }
 
@@ -159,6 +231,30 @@ impl BrainEngine {
             })
         })?;
         Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    pub fn graph_query_filtered(
+        &self,
+        anchor: &str,
+        depth: usize,
+        rel_filter: Option<&str>,
+    ) -> Result<GraphQueryResult> {
+        let g = self.graph_query(anchor, depth)?;
+        if let Some(rel) = rel_filter {
+            let edges: Vec<LinkRow> = g.edges.into_iter().filter(|e| e.rel == rel).collect();
+            let mut nodes: HashSet<String> = HashSet::new();
+            nodes.insert(anchor.to_string());
+            for e in &edges {
+                nodes.insert(e.from_slug.clone());
+                nodes.insert(e.to_slug.clone());
+            }
+            return Ok(GraphQueryResult {
+                anchor: g.anchor,
+                nodes: nodes.into_iter().collect(),
+                edges,
+            });
+        }
+        Ok(g)
     }
 
     pub fn graph_query(&self, anchor: &str, depth: usize) -> Result<GraphQueryResult> {
@@ -302,6 +398,42 @@ impl BrainEngine {
         Ok((s.page_count, s.link_count))
     }
 
+    pub fn list_pages_without_inbound_links(&self, limit: usize) -> Result<Vec<String>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT p.slug FROM pages p
+            WHERE p.deleted = 0
+              AND NOT EXISTS (SELECT 1 FROM links l WHERE l.to_slug = p.slug)
+            LIMIT ?1
+            "#,
+        )?;
+        let rows = stmt.query_map([limit as i64], |r| r.get::<_, String>(0))?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    pub fn reindex_all_vectors(&self, embedder: &dyn Embedder) -> Result<usize> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare("SELECT slug, body FROM pages WHERE deleted = 0")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut n = 0usize;
+        for row in rows.flatten() {
+            self.reindex_page_vectors(&conn, &row.0, &row.1, embedder)?;
+            n += 1;
+        }
+        Ok(n)
+    }
+
+    pub fn close_stale_open_loops(&self, max_age_days: i64) -> Result<usize> {
+        let conn = self.conn()?;
+        let cutoff = (Utc::now() - chrono::Duration::days(max_age_days)).to_rfc3339();
+        let n = conn.execute(
+            "UPDATE open_loops SET status = 'dreamed' WHERE status = 'open' AND created_at < ?1",
+            [cutoff],
+        )?;
+        Ok(n)
+    }
+
     pub fn import_markdown_dir(&self, root: &Path) -> Result<usize> {
         let mut n = 0usize;
         if !root.is_dir() {
@@ -366,4 +498,22 @@ fn dirs_fallback() -> PathBuf {
         .or_else(|_| std::env::var("USERPROFILE"))
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."))
+}
+
+fn chunk_text(body: &str, max_len: usize) -> Vec<String> {
+    if body.len() <= max_len {
+        return vec![body.to_string()];
+    }
+    body.split("\n\n")
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(|p| p.chars().take(max_len).collect::<String>())
+        .collect()
+}
+
+fn md5_hash(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
 }

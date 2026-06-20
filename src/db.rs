@@ -70,6 +70,16 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             created_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS chunk_vectors (
+            slug TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            dim INTEGER NOT NULL,
+            vector BLOB NOT NULL,
+            text_hash TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (slug, chunk_index)
+        );
+
         CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
             slug,
             title,

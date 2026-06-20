@@ -1,0 +1,23 @@
+{
+  "id": "rs_gbrain",
+  "name": "rs_gbrain",
+  "version": "0.1.0",
+  "description": "Local hybrid RAG brain CLI: search, query, put, dream",
+  "tools": [
+    {
+      "name": "brain_search",
+      "command": "rs_gbrain",
+      "args": ["search", "{query}", "--json"]
+    },
+    {
+      "name": "brain_query",
+      "command": "rs_gbrain",
+      "args": ["query", "{question}", "--json"]
+    },
+    {
+      "name": "brain_put",
+      "command": "rs_gbrain",
+      "args": ["put", "{slug}", "--body", "{body}"]
+    }
+  ]
+}

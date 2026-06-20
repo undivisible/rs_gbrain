@@ -21,6 +21,14 @@
 | `init` | `init` | yes |
 | `smoke` | `smoke` | yes |
 
+## Implemented (this crate)
+
+- Typed edges on write (`works_at`, `reports_to`, `invested_in`, `attended`, `[[slug|rel]]`)
+- `graph-query` + `graph_query_filtered(rel)`
+- Hybrid RAG: FTS + chunk vectors (HashEmbedder CI; `fastembed` feature for real models)
+- Nightly `dream`: hypotheses, orphan links, vector reindex, stale loop close
+- Plugins: `plugins/openclaw/SKILL.md`, `plugins/hermes/plugin.json`
+
 ## Not in scope (use upstream gbrain or later)
 
 OAuth, `serve --http`, MCP, PGLite/Postgres fleet, embeddings multimodal, minions, skillpacks, company RLS, autopilot, enrich pipelines, takes calibration, LSD, etc.

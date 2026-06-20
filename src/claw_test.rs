@@ -38,6 +38,11 @@ pub fn run_scripted() -> Result<ClawTestReport> {
     }
     let _ = crate::query::gather_context(&e, "What about Alice?", 5)?;
 
+    let links = e.neighbors("people/alice", 10)?;
+    if !links.iter().any(|l| l.rel == "works_at") {
+        anyhow::bail!("typed edges: expected works_at");
+    }
+    let _ = crate::run_nightly_cycle(&e, &crate::HashEmbedder)?;
     let stats = e.brain_stats()?;
     if stats.page_count < 2 {
         anyhow::bail!("verify: expected >=2 pages");
