@@ -96,6 +96,15 @@ enum Commands {
         path: PathBuf,
     },
     Dream,
+    /// Import memory/open-loops.md + time-contexts.md from workspace
+    SyncBrief {
+        workspace: PathBuf,
+    },
+    /// Local JSON API on 127.0.0.1 (not MCP; requires --features local-http)
+    Serve {
+        #[arg(long, default_value = "127.0.0.1:8787")]
+        bind: String,
+    },
     Smoke,
     #[command(name = "claw-test")]
     ClawTest,
@@ -109,7 +118,8 @@ fn open_engine(cli: &Cli) -> Result<BrainEngine> {
     BrainEngine::open(path)
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
@@ -230,6 +240,14 @@ fn main() -> Result<()> {
                 "dream hypotheses={} links={} vectors={} loops_closed={}",
                 r.hypothesis_pages, r.links_added, r.chunks_indexed, r.loops_closed
             );
+        }
+        Commands::SyncBrief { workspace } => {
+            rs_gbrain::sync_workspace_brief(&workspace, &e)?;
+            println!("brief synced from {}", workspace.display());
+        }
+        Commands::Serve { bind } => {
+            let addr: std::net::SocketAddr = bind.parse()?;
+            rs_gbrain::local_http::serve(addr, e).await?;
         }
         Commands::Smoke => run_smoke(&e)?,
         Commands::ClawTest => {

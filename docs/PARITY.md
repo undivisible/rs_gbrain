@@ -29,9 +29,15 @@
 - Nightly `dream`: hypotheses, orphan links, vector reindex, stale loop close
 - Plugins: `plugins/openclaw/SKILL.md`, `plugins/hermes/plugin.json`
 
+## Local only (this repo)
+
+- SQLite file brain, CLI, plugins for OpenClaw/Hermes/unthinkclaw
+- Optional `local-http` on **127.0.0.1** (JSON routes, **not MCP**)
+- README states **no remote MCP** today
+
 ## Not in scope (use upstream gbrain or later)
 
-OAuth, `serve --http`, MCP, PGLite/Postgres fleet, embeddings multimodal, minions, skillpacks, company RLS, autopilot, enrich pipelines, takes calibration, LSD, etc.
+OAuth, remote MCP, PGLite/Postgres fleet, embeddings multimodal, minions, skillpacks, company RLS, autopilot, enrich pipelines, takes calibration, LSD, etc.
 
 ## unthinkclaw tools
 

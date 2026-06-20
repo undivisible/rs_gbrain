@@ -6,6 +6,7 @@ use chrono::Utc;
 use crate::embed::{Embedder, HashEmbedder};
 use crate::engine::BrainEngine;
 
+#[derive(serde::Serialize)]
 pub struct DreamReport {
     pub hypothesis_pages: usize,
     pub links_added: usize,

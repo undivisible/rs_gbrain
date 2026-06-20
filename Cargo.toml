@@ -22,12 +22,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
 thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+axum = { version = "0.8", optional = true }
 
 [features]
 default = []
 fastembed = ["dep:fastembed"]
+local-http = ["dep:axum", "tokio/net"]
 
 [dependencies.fastembed]
 version = "4"

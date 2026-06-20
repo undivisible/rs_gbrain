@@ -6,7 +6,7 @@ use crate::engine::BrainEngine;
 use crate::types::QueryAnswer;
 
 pub fn gather_context(engine: &BrainEngine, question: &str, limit: usize) -> Result<QueryAnswer> {
-    let hits = engine.search(question, limit)?;
+    let hits = engine.hybrid_search(question, limit, None)?;
     let mut citations = hits.clone();
     if citations.is_empty() {
         let words: Vec<&str> = question
