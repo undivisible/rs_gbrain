@@ -1,6 +1,6 @@
 [package]
 name = "gbrain"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Local-first hybrid RAG knowledge brain: SQLite, FTS5, typed graph edges, embeddings, dream cycle — Rust port of gbrain"
 license = "ISC"
