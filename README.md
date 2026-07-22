@@ -1,6 +1,6 @@
 # rs_gbrain
 
-Local **hybrid RAG** knowledge brain (MPL-2.0): SQLite, FTS5, typed graph edges, chunk embeddings, nightly dream cycle.
+Local **hybrid RAG** knowledge brain (ISC): SQLite, FTS5, typed graph edges, chunk embeddings, nightly dream cycle.
 
 **Agent hosts:** OpenClaw (`SKILL.md`), Hermes (`plugin.json`), unthinkclaw (`brain_*` tools).
 
