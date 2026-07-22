@@ -55,4 +55,4 @@ unthinkclaw also scans `plugins/`, `.openclaw/plugins`, `.hermes/plugins` at sta
 
 ## License
 
-Mozilla Public License 2.0 — see `LICENSE`.
+ISC — see LICENSE.
